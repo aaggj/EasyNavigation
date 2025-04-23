@@ -134,6 +134,22 @@ private:
    * This method is periodically called by a timer to run the sensors logic
    */
   void sensors_cycle();
+  /**
+   * @brief Time threshold (in seconds) after which sensor data is discarded.
+   */
+  double forget_time_;
+  /**
+   * @brief Publisher for the fused sensor data in PointCloud2 format.
+   */
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr fused_pub_;
+  /**
+   * @brief Buffer for storing and querying transforms.
+   */
+  tf2_ros::Buffer tf_buffer_;
+  /**
+   * @brief Listener to populate the TF2 buffer with incoming transforms.
+   */
+  tf2_ros::TransformListener tf_listener_;
 };
 
 }  // namespace easynav_sensors

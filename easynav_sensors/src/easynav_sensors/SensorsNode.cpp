@@ -32,7 +32,9 @@ namespace easynav_sensors
 using namespace std::chrono_literals;
 
 SensorsNode::SensorsNode(const rclcpp::NodeOptions & options)
-: LifecycleNode("sensors_node", options)
+: LifecycleNode("sensors_node", options),
+  tf_buffer_(this->get_clock()),
+  tf_listener_(tf_buffer_, *this, false)
 {
   realtime_cbg_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive, false);
 }
@@ -43,7 +45,48 @@ CallbackReturnT
 SensorsNode::on_configure(const rclcpp_lifecycle::State & state)
 {
   (void)state;
+  RCLCPP_INFO(get_logger(), "Configuring node...");
 
+  declare_parameter("forget_time", 0.5);
+  get_parameter("forget_time", forget_time_);
+
+  declare_parameter("sensors", std::vector<std::string>{});
+  std::vector<std::string> sensor_names;
+  get_parameter("sensors", sensor_names);
+
+  for (const auto &sensor : sensor_names) {
+    std::string topic, type;
+    declare_parameter(sensor + ".topic", "");
+    declare_parameter(sensor + ".type", "");
+    get_parameter(sensor + ".topic", topic);
+    get_parameter(sensor + ".type", type);
+
+    if (type == "LaserScan") {
+      auto sub = create_subscription<sensor_msgs::msg::LaserScan>(
+        topic, 10,
+        [this, sensor](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+          handle_laserscan(sensor, msg);
+        });
+      laser_subs_.push_back(sub);
+    } else if (type == "PointCloud") {
+      auto sub = create_subscription<sensor_msgs::msg::PointCloud2>(
+        topic, 10,
+        [this, sensor](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          handle_pointcloud(sensor, msg);
+        });
+      pc_subs_.push_back(sub);
+    }
+  }
+
+  fused_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+    "/easynav/fused_cloud", 10);
+  marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+    "/easynav/markers", 10);
+  sensors_main_timer_ = create_wall_timer(
+    100ms, std::bind(&SensorsNode::sensors_cycle, this), realtime_cbg_);
+  sensors_main_timer_->cancel();
+  RCLCPP_INFO(get_logger(), "Node configured successfully.");
+  
   return CallbackReturnT::SUCCESS;
 }
 
